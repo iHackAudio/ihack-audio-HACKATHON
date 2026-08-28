@@ -1,0 +1,770 @@
+import express from "express";
+import http from "http";
+import path from "path";
+import fs from "fs";
+import { createServer as createViteServer } from "vite";
+import { WebSocketServer } from "ws";
+import multer from "multer";
+import { JARVIS_SYSTEM_INSTRUCTION } from "./server/instruction.ts";
+
+const WORKSPACE_DIR = path.join(process.cwd(), "workspace files");
+if (!fs.existsSync(WORKSPACE_DIR)) {
+  fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
+}
+
+function getWorkspaceRoot(): string {
+  const defaultWorkspace = path.join(process.cwd(), "workspace files");
+  if (!fs.existsSync(defaultWorkspace)) {
+    fs.mkdirSync(defaultWorkspace, { recursive: true });
+  }
+  return defaultWorkspace;
+}
+
+function getSafePath(relativePath: string): string {
+  const root = getWorkspaceRoot();
+  const fullPath = path.resolve(root, relativePath);
+  if (!fullPath.startsWith(root) && fullPath !== root) {
+    throw new Error("Access denied: Path outside permitted directory root.");
+  }
+  return fullPath;
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, getWorkspaceRoot());
+  },
+  filename: (req, file, cb) => {
+    cb(null, file.originalname);
+  }
+});
+const upload = multer({ storage });
+
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(express.json({ limit: "50mb" }));
+
+  // 3.1 Set up /api/health
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
+  });
+
+  // Diagnostic endpoint to test all API keys and AI providers
+  app.get("/api/test-keys", async (req, res) => {
+    try {
+      const { testAllKeys } = await import("./server/aiProviderService.ts");
+      const results = await testAllKeys();
+      res.json({ status: "completed", timestamp: new Date().toISOString(), results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || String(e) });
+    }
+  });
+
+  // Story Bible Management Endpoints
+  app.get("/api/story-bible", async (req, res) => {
+    try {
+      const { loadStoryBible } = await import("./server/storyBibleManager.ts");
+      const bible = loadStoryBible();
+      res.json(bible);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/story-bible", async (req, res) => {
+    try {
+      const { saveStoryBible } = await import("./server/storyBibleManager.ts");
+      const updated = saveStoryBible(req.body);
+      res.json({ status: "success", bible: updated });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/story-bible/reset", async (req, res) => {
+    try {
+      const { saveStoryBible } = await import("./server/storyBibleManager.ts");
+      const { createDefaultStoryBible } = await import("./src/types/storyBible.ts");
+      const { saveQuestionnaire, getDefaultQuestionnaire } = await import("./server/questionnaireManager.ts");
+      
+      // Reset Story Bible to default state
+      const defaultBible = createDefaultStoryBible();
+      const savedBible = saveStoryBible(defaultBible);
+
+      // Reset Questionnaire to default state
+      const defaultQuestionnaire = getDefaultQuestionnaire();
+      saveQuestionnaire(defaultQuestionnaire);
+
+      // Clear all sub-agent memories for this session or globally
+      const { clearSubAgent } = await import("./server/agentHub.ts");
+      const sessionId = req.body?.sessionId || null;
+      clearSubAgent(sessionId);
+
+      res.json({ status: "success", bible: savedBible });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/story-bible/markdown", async (req, res) => {
+    try {
+      const { getStoryBibleMarkdown } = await import("./server/storyBibleManager.ts");
+      const md = getStoryBibleMarkdown();
+      res.json({ markdown: md });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/story-bible/import", async (req, res) => {
+    try {
+      const { importStoryBibleData } = await import("./server/storyBibleManager.ts");
+      const payload = req.body.data || req.body;
+      const imported = importStoryBibleData(payload);
+      res.json({ status: "success", bible: imported });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/story-bible/export/json", async (req, res) => {
+    try {
+      const { getStoryBibleJsonPath, loadStoryBible } = await import("./server/storyBibleManager.ts");
+      const jsonPath = getStoryBibleJsonPath();
+      if (!fs.existsSync(jsonPath)) {
+        loadStoryBible();
+      }
+      res.download(jsonPath, "story_bible.json");
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/story-bible/export/markdown", async (req, res) => {
+    try {
+      const { getStoryBibleMarkdownPath, loadStoryBible } = await import("./server/storyBibleManager.ts");
+      const mdPath = getStoryBibleMarkdownPath();
+      if (!fs.existsSync(mdPath)) {
+        loadStoryBible();
+      }
+      res.download(mdPath, "STORY_BIBLE.md");
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Questionnaire & Information Gathering Endpoints
+  app.get("/api/questionnaire", async (req, res) => {
+    try {
+      const { loadQuestionnaire } = await import("./server/questionnaireManager.ts");
+      const q = loadQuestionnaire();
+      res.json(q);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/questionnaire", async (req, res) => {
+    try {
+      const { saveQuestionnaire } = await import("./server/questionnaireManager.ts");
+      const updated = saveQuestionnaire(req.body);
+      res.json({ status: "success", questionnaire: updated });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/questionnaire/compile", async (req, res) => {
+    try {
+      const { loadQuestionnaire } = await import("./server/questionnaireManager.ts");
+      const { loadStoryBible, saveStoryBible } = await import("./server/storyBibleManager.ts");
+      const { compileQuestionnaireToBible } = await import("./server/geminiService.ts");
+
+      const q = req.body.answers ? req.body : loadQuestionnaire();
+      const currentBible = loadStoryBible();
+      const newBible = await compileQuestionnaireToBible(q.answers || q, currentBible);
+      const saved = saveStoryBible(newBible);
+      res.json({ status: "success", bible: saved });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Validation & Critique Endpoints
+  app.post("/api/validation/phase1-step", async (req, res) => {
+    try {
+      const { step, answers } = req.body;
+      const { validatePhase1Step } = await import("./server/geminiService.ts");
+      const result = await validatePhase1Step(step || 1, answers || {});
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/validation/story-bible", async (req, res) => {
+    try {
+      const { loadStoryBible } = await import("./server/storyBibleManager.ts");
+      const { validateStoryBible } = await import("./server/geminiService.ts");
+      const { customInstruction } = req.body || {};
+      const bible = loadStoryBible();
+      const result = await validateStoryBible(bible, customInstruction);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/validation/scene-brief", async (req, res) => {
+    try {
+      const { sceneTitle, location, characters, brief, characterDetails, acousticDetails } = req.body;
+      const { loadStoryBible } = await import("./server/storyBibleManager.ts");
+      const { validateSceneBrief } = await import("./server/geminiService.ts");
+      const bible = loadStoryBible();
+      const result = await validateSceneBrief({
+        sceneTitle: sceneTitle || bible.scenes?.[0]?.title || bible.concept.title || "Scene 1",
+        location: location || bible.locations?.[0]?.name || "Main Location",
+        characters: (Array.isArray(characters) && characters.length > 0 && characters[0]) ? characters : (bible.characterProfiles?.map(c => c.name) || [bible.concept.title || "Narrator"]),
+        brief: brief || bible.scenes?.[0]?.summary || bible.concept.summary || bible.concept.hook || "Scene Brief",
+        characterDetails,
+        acousticDetails
+      }, bible);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Scene Tournament Endpoints
+  app.post("/api/tournament/generate", async (req, res) => {
+    try {
+      const { sceneTitle, location, characters, brief } = req.body;
+      const { loadStoryBible } = await import("./server/storyBibleManager.ts");
+      const { runSceneTournament } = await import("./server/geminiService.ts");
+      const bible = loadStoryBible();
+
+      const finalSceneTitle = sceneTitle || bible.scenes?.[0]?.title || bible.concept.title || "Scene 1";
+      const finalLocation = location || bible.locations?.[0]?.name || "Main Location";
+      const finalCharacters = (Array.isArray(characters) && characters.length > 0 && characters[0]) ? characters : (bible.characterProfiles?.map(c => c.name) || [bible.concept.title || "Narrator"]);
+      const finalBrief = brief || bible.scenes?.[0]?.summary || bible.concept.summary || bible.concept.hook || "Scene Brief";
+
+      const result = await runSceneTournament(
+        finalSceneTitle,
+        finalLocation,
+        finalCharacters,
+        finalBrief,
+        bible
+      );
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Script Optimization Endpoints
+  app.post("/api/script/optimize", async (req, res) => {
+    try {
+      const { approvedProse } = req.body;
+      const { loadStoryBible } = await import("./server/storyBibleManager.ts");
+      const { runScriptOptimization } = await import("./server/geminiService.ts");
+      const bible = loadStoryBible();
+
+      const result = await runScriptOptimization(approvedProse || "", bible);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/script/rewrite-line", async (req, res) => {
+    try {
+      const { fullScript, targetLineId, targetLineText, commentInstruction } = req.body;
+      const { loadStoryBible } = await import("./server/storyBibleManager.ts");
+      const { rewriteScriptLine } = await import("./server/geminiService.ts");
+      const bible = loadStoryBible();
+
+      const updatedScript = await rewriteScriptLine(
+        fullScript || "",
+        targetLineId || "L1",
+        targetLineText || "",
+        commentInstruction || "Tweak vocal tone",
+        bible
+      );
+      res.json({ updatedScript });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/script/chat-edit", async (req, res) => {
+    try {
+      const { currentScript, userPrompt } = req.body;
+      const { loadStoryBible } = await import("./server/storyBibleManager.ts");
+      const { chatEditScript } = await import("./server/geminiService.ts");
+      const bible = loadStoryBible();
+
+      const result = await chatEditScript(currentScript || "", userPrompt || "", bible);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Local File Management Endpoints
+  app.get("/api/files", (req, res) => {
+    try {
+      const targetSubDir = (req.query.path as string) || "";
+      const fullPath = getSafePath(targetSubDir);
+      
+      if (!fs.existsSync(fullPath)) {
+        return res.json({ files: [] });
+      }
+
+      const files = fs.readdirSync(fullPath, { withFileTypes: true })
+        .filter(entry => {
+          return !["node_modules", "dist", ".git", "package-lock.json", "server/agent_config.json", "server/agent_memory.json"].includes(entry.name);
+        })
+        .map(entry => {
+          const entryRelativePath = path.join(targetSubDir, entry.name);
+          const stats = fs.statSync(path.join(fullPath, entry.name));
+          return {
+            name: entry.name,
+            path: entryRelativePath,
+            isDirectory: entry.isDirectory(),
+            size: stats.isDirectory() ? 0 : stats.size,
+            updatedAt: stats.mtime
+          };
+        });
+
+      res.json({ files });
+    } catch(e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/files/upload", upload.single("file"), (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const targetSubDir = (req.query.path as string) || "";
+      if (targetSubDir) {
+        const finalDir = getSafePath(targetSubDir);
+        fs.mkdirSync(finalDir, { recursive: true });
+        const srcPath = req.file.path;
+        const finalDest = path.join(finalDir, req.file.originalname);
+        if (srcPath !== finalDest) {
+          fs.renameSync(srcPath, finalDest);
+        }
+      }
+      res.json({ status: "success", file: req.file?.originalname });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/files/content/:filename", (req, res) => {
+    try {
+      const filename = decodeURIComponent(req.params.filename);
+      const fullPath = getSafePath(filename);
+      if (!fs.existsSync(fullPath)) return res.status(404).json({ error: "Not found" });
+      const content = fs.readFileSync(fullPath, "utf-8");
+      res.json({ content });
+    } catch(e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/files/content", (req, res) => {
+    try {
+      const { filename, content } = req.body;
+      if (!filename) return res.status(400).json({ error: "Filename missing" });
+      const fullPath = getSafePath(filename);
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, content || "", "utf-8");
+      res.json({ status: "success" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/files/folder", (req, res) => {
+    try {
+      const { path: dirPath } = req.body;
+      if (!dirPath) return res.status(400).json({ error: "Path missing" });
+      const fullPath = getSafePath(dirPath);
+      fs.mkdirSync(fullPath, { recursive: true });
+      res.json({ status: "success" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/files/:filename", (req, res) => {
+    try {
+      const filename = decodeURIComponent(req.params.filename);
+      const fullPath = getSafePath(filename);
+      if (fs.existsSync(fullPath)) {
+        const stats = fs.statSync(fullPath);
+        if (stats.isDirectory()) {
+          fs.rmSync(fullPath, { recursive: true, force: true });
+        } else {
+          fs.unlinkSync(fullPath);
+        }
+      }
+      res.json({ status: "success" });
+    } catch(e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Audio serving endpoint for synthesized MP3 files
+  app.get("/api/audio/:filename", (req, res) => {
+    try {
+      const filename = path.basename(req.params.filename);
+      const audioPath = path.join(process.cwd(), "output", filename);
+      if (!fs.existsSync(audioPath)) {
+        return res.status(404).json({ error: "Audio file not found" });
+      }
+      res.setHeader("Content-Type", "audio/mpeg");
+      fs.createReadStream(audioPath).pipe(res);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Direct Edge-TTS synthesis REST API
+  app.post("/api/tts/synthesize", async (req, res) => {
+    try {
+      const { script, voice, outputFileName } = req.body;
+      if (!script) {
+        return res.status(400).json({ error: "Script parameter is required." });
+      }
+      const { executeEdgeTts } = await import("./server/ttsService.ts");
+      const result = await executeEdgeTts({ script, voice, outputFileName });
+      if (result.status === "success") {
+        res.json(result);
+      } else {
+        res.status(500).json(result);
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/clear-history", async (req, res) => {
+    try {
+      const sessionId = req.body?.sessionId || null;
+      const { clearSubAgent } = await import("./server/agentHub.ts");
+      clearSubAgent(sessionId);
+      res.json({ status: "success", message: "In-memory sub-agent history cleared successfully." });
+    } catch (err: any) {
+      console.error("Failed to clear sub-agent memory:", err);
+      res.status(500).json({ error: err?.message || "Failed to clear memory" });
+    }
+  });
+
+  app.get("/api/agent-config", async (req, res) => {
+    try {
+      const { loadAgentConfigs } = await import("./server/agentConfigManager.ts");
+      const config = loadAgentConfigs();
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/agent-config", async (req, res) => {
+    try {
+      const { saveAgentConfigs } = await import("./server/agentConfigManager.ts");
+      saveAgentConfigs(req.body);
+      res.json({ status: "success", config: req.body });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/chat", async (req, res) => {
+    try {
+      const { message, history, autoSpeechEnabled = true, sessionId = null } = req.body;
+      const targetAgentId = req.body.agentId || "jarvis";
+      
+      const { chatWithSubAgent } = await import("./server/agentHub.ts");
+      const { GoogleGenAI, Type } = await import("@google/genai");
+      const key = process.env.GEMINI_API_KEY;
+      if (!key) {
+        return res.status(400).json({ error: "No API key" });
+      }
+
+      if (targetAgentId === "agentA" || targetAgentId === "agentB") {
+        const reply = await chatWithSubAgent(targetAgentId, message, key, sessionId);
+        return res.json({ text: reply, agentId: targetAgentId });
+      } else {
+        const ai = new GoogleGenAI({ apiKey: key });
+        const requestInstruction = req.body.instruction || JARVIS_SYSTEM_INSTRUCTION;
+        const rawMiddlemanModel = req.body.middlemanModel || "gemini-2.5-flash";
+        const middlemanModel = rawMiddlemanModel;
+        
+        // Re-hydrate full conversation context for J.A.R.V.I.S. from history
+        const contents: any[] = [];
+        if (Array.isArray(history) && history.length > 0) {
+          let lastRole: string | null = null;
+          for (const item of history) {
+            const role = item.role === 'user' ? 'user' : 'model';
+            // Gemini API requires strictly alternating role sequence (user -> model -> user -> model)
+            if (role !== lastRole) {
+              contents.push({
+                role: role,
+                parts: [{ text: item.content }]
+              });
+              lastRole = role;
+            } else {
+              // Merge successive turns of identical roles side-by-side to maintain valid structure
+              if (contents.length > 0) {
+                contents[contents.length - 1].parts[0].text += "\n\n" + item.content;
+              } else {
+                contents.push({
+                  role: role,
+                  parts: [{ text: item.content }]
+                });
+                lastRole = role;
+              }
+            }
+          }
+        }
+
+        // Add user prompt to the alternating chain safely
+        if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
+          contents[contents.length - 1].parts[0].text += "\n\n" + message;
+        } else {
+          contents.push({ role: "user", parts: [{ text: message }] });
+        }
+
+        // Attach image parts if provided in req.body.attachments
+        if (Array.isArray(req.body.attachments) && req.body.attachments.length > 0) {
+          const userParts = contents[contents.length - 1].parts;
+          for (const att of req.body.attachments) {
+            if (att.data && att.mimeType) {
+              const base64Data = att.data.replace(/^data:image\/\w+;base64,/, "");
+              userParts.push({
+                inlineData: {
+                  mimeType: att.mimeType,
+                  data: base64Data
+                }
+              });
+            }
+          }
+        }
+        let loopLimit = 5;
+        let responseText = "";
+        let finalAudioUrl: string | undefined = undefined;
+        let runLogs: any[] = [];
+
+        const { speechSynthesizerTool, executeEdgeTts } = await import("./server/ttsService.ts");
+
+        const targetJarvisModel = req.body.model || req.body.jarvisModel || req.body.middlemanModel || "gemini-2.5-flash";
+        const fallbackModelList = Array.from(new Set([targetJarvisModel, "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]));
+
+        while (loopLimit > 0) {
+          loopLimit--;
+
+          let response: any = null;
+          let lastError: any = null;
+
+          for (const currentModelName of fallbackModelList) {
+            try {
+              response = await ai.models.generateContent({
+                model: currentModelName,
+                contents: contents,
+                config: {
+                  systemInstruction: requestInstruction,
+                  tools: [{
+                    functionDeclarations: [{
+                      name: "message_agent",
+                      description: "Send a message to a sub-agent. They will respond to you, and you can relay their findings. Available agents: agentA, agentB.",
+                      parameters: {
+                        type: Type.OBJECT,
+                        properties: {
+                          agentId: { 
+                              type: Type.STRING, 
+                              description: "The agent id (must be exactly 'agentA' or 'agentB')" 
+                          },
+                          message: { 
+                              type: Type.STRING, 
+                              description: "Your message or request to the sub-agent" 
+                          }
+                        },
+                        required: ["agentId", "message"]
+                      }
+                    }, speechSynthesizerTool]
+                  }]
+                }
+              });
+              if (response) {
+                break;
+              }
+            } catch (mErr: any) {
+              lastError = mErr;
+              console.warn(`[JARVIS Model Failure] Model '${currentModelName}' failed:`, mErr?.message || mErr);
+            }
+          }
+
+          if (!response) {
+            const isQuota = lastError?.message?.includes("429") || lastError?.message?.includes("quota") || lastError?.status === 429;
+            if (isQuota) {
+              return res.json({
+                text: "⚠️ **Gemini API Quota Exceeded (429 Error)**\n\nThe current Gemini API key has exceeded its rate limit quota.\n\n### 🔧 How to Fix:\n1. Click **System Settings** in the top navigation bar.\n2. Under **Model Selection**, switch to another model (e.g. `gemini-2.5-pro` or `gemini-1.5-flash`).\n3. Or enter your personal **Gemini API Key** or **Groq Key** in Settings, then click **Save Configuration**.",
+                agentId: "jarvis",
+                logs: runLogs
+              });
+            }
+            throw lastError || new Error("Failed to generate content across all fallback models.");
+          }
+
+          const modelTurn = response.candidates?.[0]?.content;
+          const functionCalls = response.functionCalls;
+
+          if (modelTurn) {
+            contents.push(modelTurn);
+          }
+
+          if (functionCalls && functionCalls.length > 0) {
+            const functionResponses: any[] = [];
+            for (const call of functionCalls) {
+              if (call.name === "message_agent") {
+                const { agentId, message: agentMsg } = call.args as any;
+                console.log(`[Text API ToolCall] message_agent: ${agentId} - ${agentMsg}`);
+                try {
+                  const rawReply = await chatWithSubAgent(agentId, agentMsg, key, sessionId);
+                  const { summarizeForJarvis } = await import("./server/agentHub.ts");
+                  const summary = await summarizeForJarvis(rawReply, key, middlemanModel);
+                  
+                  // Track telemetry logs for display in frontend AgentLogsPanel
+                  runLogs.push({
+                     agentId: agentId,
+                     text: rawReply,
+                     timestamp: Date.now()
+                  });
+                  runLogs.push({
+                     agentId: "Gemma-Middleman",
+                     text: `[${middlemanModel} Synthesis]:\n${summary}`,
+                     timestamp: Date.now()
+                  });
+
+                  functionResponses.push({
+                    name: "message_agent",
+                    response: { agent_reply: summary }
+                  });
+                } catch (err: any) {
+                  console.error(`[Text API ToolCall Error] ${agentId}:`, err);
+                  functionResponses.push({
+                    name: "message_agent",
+                    response: { error: `Failed to communicate with ${agentId}: ${err.message}` }
+                  });
+                }
+              } else if (call.name === "synthesizeSpeech") {
+                const args = call.args as { script: string; voice: string; outputFileName: string };
+                console.log(`[Edge-TTS Intercept] Synthesizing audio via Microsoft Edge Neural Voice (${args.voice})`);
+                const ttsResult = await executeEdgeTts(args);
+                runLogs.push({
+                  agentId: "Edge-TTS-Engine",
+                  text: `🔊 **[MICROSOFT EDGE-TTS GENERATED]**\n- Voice: \`${args.voice}\`\n- File: \`${args.outputFileName}\`\n- Audio URL: ${ttsResult.audioUrl}`,
+                  timestamp: Date.now()
+                });
+                functionResponses.push({
+                  name: "synthesizeSpeech",
+                  response: ttsResult
+                });
+              }
+            }
+
+            // Provide tool responses straight back to Jarvis for synthesis
+            contents.push({
+              role: "user",
+              parts: functionResponses.map((resp, idx) => ({
+                functionResponse: {
+                  name: resp.name,
+                  id: functionCalls[idx].id,
+                  response: resp.response
+                }
+              }))
+            });
+          } else {
+            responseText = response.text || "";
+
+            if (responseText && !responseText.includes("SYSTEM INSTRUCTION:") && autoSpeechEnabled) {
+              console.log(`[Auto-Speech Intercept] Synthesizing Jarvis's final response...`);
+              try {
+                const autoTtsResult = await executeEdgeTts({
+                  script: responseText,
+                  voice: "en-US-AvaNeural",
+                  outputFileName: `auto_response_${Date.now()}.mp3`
+                });
+                
+                if (autoTtsResult.status === "success" && autoTtsResult.audioUrl) {
+                  finalAudioUrl = autoTtsResult.audioUrl;
+                  runLogs.push({
+                    agentId: "Edge-TTS-Engine",
+                    text: `🔊 **[AUTO-SPEECH ENABLED]** Generated MP3 for final response.\n- Audio URL: ${autoTtsResult.audioUrl}`,
+                    timestamp: Date.now()
+                  });
+                }
+              } catch (e) {
+                console.error("Auto-Speech failed:", e);
+              }
+            }
+
+            break;
+          }
+        }
+
+        return res.json({ 
+          text: responseText || "Cognitive pipeline successfully completed with no final text.", 
+          audioUrl: finalAudioUrl,
+          agentId: "jarvis", 
+          logs: runLogs 
+        });
+      }
+    } catch (err: any) {
+      console.error("/api/chat error:", err);
+      res.status(500).json({ error: err.message || "Failed to process chat" });
+    }
+  });
+
+  // 3.2 Set up HTTP Server and WebSocket
+  const server = http.createServer(app);
+  const wss = new WebSocketServer({ server, path: "/live" });
+
+  const { handleJarvisWebSocket } = await import("./server/agents/jarvis.ts");
+
+  wss.on("connection", (ws, req) => {
+    // Only Jarvis remains as the Live WS handler
+    handleJarvisWebSocket(ws, req);
+  });
+
+  // 3.3 Verify Vite middleware loads in dev mode
+  if (process.env.NODE_ENV !== "production") {
+    console.log("Loading Vite Middleware...");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  // 3.4 Verify server starts on PORT 3000
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server starting on port ${PORT}`);
+  });
+}
+
+startServer().catch(err => {
+  console.error("Failed to start server:", err);
+});
+

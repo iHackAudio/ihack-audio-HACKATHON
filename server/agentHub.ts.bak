@@ -1,0 +1,343 @@
+import { GoogleGenAI } from "@google/genai";
+
+import { AGENT_A_SYSTEM_INSTRUCTION, AGENT_B_SYSTEM_INSTRUCTION, MIDDLEMAN_SYSTEM_INSTRUCTION } from "./instruction";
+import { loadAgentConfigs, saveAgentConfigs } from "./agentConfigManager";
+
+import * as fs from "fs";
+import * as path from "path";
+
+const MEMORY_FILE = path.join(process.cwd(), "server", "agent_memory.json");
+
+function loadMemory(): Record<string, any> {
+  try {
+    if (fs.existsSync(MEMORY_FILE)) {
+      const raw = fs.readFileSync(MEMORY_FILE, "utf-8");
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.error("Failed to load agent memory:", err);
+  }
+  return { agentA: [], agentB: [], jarvis_sessions: {} };
+}
+
+function saveMemory(mem: Record<string, any>) {
+  try {
+    const parentDir = path.dirname(MEMORY_FILE);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+    fs.writeFileSync(MEMORY_FILE, JSON.stringify(mem, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Failed to save agent memory:", err);
+  }
+}
+
+// Simple history per agent ID to maintain conversation context across reboots.
+export const systemMemory = loadMemory();
+
+export function clearSubAgent(sessionId?: string | null) {
+  if (sessionId) {
+    if (systemMemory.jarvis_sessions && systemMemory.jarvis_sessions[sessionId]) {
+      systemMemory.jarvis_sessions[sessionId] = [];
+    }
+    systemMemory[`${sessionId}_agentA`] = [];
+    systemMemory[`${sessionId}_agentB`] = [];
+  } else {
+    systemMemory.agentA = [];
+    systemMemory.agentB = [];
+  }
+  saveMemory(systemMemory);
+}
+
+export function saveSystemMemory() {
+  saveMemory(systemMemory);
+}
+
+export async function summarizeForJarvis(rawText: string, apiKey: string, modelName: string = "gemini-2.5-flash"): Promise<string> {
+  const configs = loadAgentConfigs();
+  const middlemanConfig = configs.middleman;
+
+  if (middlemanConfig && !middlemanConfig.enabled) {
+    console.log("[Synthesis Middleman] Middleware is disabled. Forwarding raw telemetry.");
+    return rawText;
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  const modelToUse = modelName === "gemma-4-31b-it" ? "gemma-4-31b-it" : (middlemanConfig?.model || "gemini-2.5-flash");
+  const systemInstruction = middlemanConfig?.systemInstruction || MIDDLEMAN_SYSTEM_INSTRUCTION;
+
+  try {
+    const { listFiles, readFile, writeFile } = await import("./../filesystem.ts");
+    const { Type } = await import("@google/genai");
+    
+    let loopLimit = 3;
+    let reply = "No response";
+    let history: any[] = [{ role: "user", parts: [{ text: `[System Instruction for Middleware]:\n${systemInstruction}\n\n[Raw Text to Summarize]:\n${rawText}` }] }];
+
+    while (loopLimit > 0) {
+      loopLimit--;
+      const response = await ai.models.generateContent({
+        model: modelToUse, 
+        contents: history,
+        config: {
+          tools: [{
+            functionDeclarations: [{
+              name: "list_workspace_files",
+              description: "List all files present in the local workspace directory.",
+              parameters: { type: Type.OBJECT, properties: {} }
+            }, {
+              name: "read_workspace_file",
+              description: "Read the content of a specific file in the workspace.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  filename: { type: Type.STRING, description: "The name of the file to read" }
+                },
+                required: ["filename"]
+              }
+            }, {
+              name: "write_workspace_file",
+              description: "Create or write content to a file in the workspace.",
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  filename: { type: Type.STRING, description: "The name of the file to write" },
+                  content: { type: Type.STRING, description: "The content to write to the file" }
+                },
+                required: ["filename", "content"]
+              }
+            }]
+          }]
+        }
+      });
+      
+      const modelTurn = response.candidates?.[0]?.content;
+      const functionCalls = response.functionCalls;
+
+      if (modelTurn) {
+        history.push(modelTurn);
+      }
+
+      if (functionCalls && functionCalls.length > 0) {
+        const functionResponses: any[] = [];
+        for (const call of functionCalls) {
+          if (call.name === "write_workspace_file") {
+            const { filename, content } = call.args as any;
+            console.log(`[Synthesis Middleman ToolCall] write_workspace_file: ${filename}`);
+            try {
+              await writeFile(filename, content);
+              functionResponses.push({
+                name: "write_workspace_file",
+                response: { status: "success" }
+              });
+            } catch (err: any) {
+              functionResponses.push({
+                name: "write_workspace_file",
+                response: { error: err.message }
+              });
+            }
+          } else if (call.name === "list_workspace_files") {
+            console.log(`[Synthesis Middleman ToolCall] list_workspace_files`);
+            try {
+              const files = await listFiles(".");
+              functionResponses.push({
+                name: "list_workspace_files",
+                response: { files: files.map(f => f.name) }
+              });
+            } catch (err: any) {
+              functionResponses.push({
+                name: "list_workspace_files",
+                response: { error: err.message }
+              });
+            }
+          } else if (call.name === "read_workspace_file") {
+            const { filename } = call.args as any;
+            console.log(`[Synthesis Middleman ToolCall] read_workspace_file: ${filename}`);
+            try {
+              const fileContent = await readFile(filename);
+              functionResponses.push({
+                name: "read_workspace_file",
+                response: { content: fileContent }
+              });
+            } catch (err: any) {
+              functionResponses.push({
+                name: "read_workspace_file",
+                response: { error: err.message }
+              });
+            }
+          }
+        }
+
+        history.push({
+          role: "user",
+          parts: functionResponses.map((resp, idx) => ({
+            functionResponse: {
+              name: resp.name,
+              id: functionCalls[idx].id,
+              response: resp.response
+            }
+          }))
+        });
+      } else {
+        reply = response.text || rawText.substring(0, 500) + "... [Summary failed]";
+        break;
+      }
+    }
+    return reply;
+  } catch (err: any) {
+    console.error("Middleware summary failed with model:", modelToUse, err);
+    return rawText.substring(0, 500) + "... [Summarization error]"; // fallback
+  }
+}
+
+export async function chatWithSubAgent(targetAgentId: string, message: string, apiKey: string, sessionId?: string | null): Promise<string> {
+  const configs = loadAgentConfigs();
+  const agentKey = targetAgentId as "agentA" | "agentB" | "middleman";
+  const agentConfig = configs[agentKey];
+
+  if (!agentConfig) {
+    throw new Error(`Agent ${targetAgentId} is not registered in the system.`);
+  }
+
+  if (!agentConfig.enabled) {
+    throw new Error(`Agent [${targetAgentId}] is currently powered down (disabled). Please execute tool update_agent_configuration to enable them if you desire services.`);
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  const modelToUse = agentConfig.model || "gemini-3.1-flash-lite";
+
+  const memoryKey = sessionId ? `${sessionId}_${targetAgentId}` : targetAgentId;
+
+  // Initialize context if it was cleared
+  if (!systemMemory[memoryKey]) {
+    systemMemory[memoryKey] = [];
+  }
+
+  // Record incoming message from Jarvis
+  systemMemory[memoryKey].push({ 
+    role: "user", 
+    parts: [{ text: `[Message from Jarvis]: ${message}` }] 
+  });
+  saveMemory(systemMemory);
+
+  const { listFiles, readFile, writeFile } = await import("./../filesystem.ts");
+  const { Type } = await import("@google/genai");
+
+  let loopLimit = 3;
+  let reply = "No response";
+
+  while (loopLimit > 0) {
+    loopLimit--;
+    const response = await ai.models.generateContent({
+      model: modelToUse, 
+      contents: systemMemory[memoryKey],
+      config: {
+        systemInstruction: agentConfig.systemInstruction + "\n\nWORKSPACE ACCESS MODULE ON:\nYou have direct access to list, read, and write files in the local workspace via tools. When commanded to write or save files, execute them in parallel and confirm the status to Jarvis.",
+        tools: [{
+          functionDeclarations: [{
+            name: "list_workspace_files",
+            description: "List all files present in the local workspace directory.",
+            parameters: { type: Type.OBJECT, properties: {} }
+          }, {
+            name: "read_workspace_file",
+            description: "Read the content of a specific file in the workspace.",
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                filename: { type: Type.STRING, description: "The name of the file to read" }
+              },
+              required: ["filename"]
+            }
+          }, {
+            name: "write_workspace_file",
+            description: "Create or write content to a file in the workspace.",
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                filename: { type: Type.STRING, description: "The name of the file to write" },
+                content: { type: Type.STRING, description: "The content to write to the file" }
+              },
+              required: ["filename", "content"]
+            }
+          }]
+        }]
+      }
+    });
+
+    const modelTurn = response.candidates?.[0]?.content;
+    const functionCalls = response.functionCalls;
+
+    if (modelTurn) {
+      systemMemory[memoryKey].push(modelTurn);
+    }
+
+    if (functionCalls && functionCalls.length > 0) {
+      const functionResponses: any[] = [];
+      for (const call of functionCalls) {
+        if (call.name === "write_workspace_file") {
+          const { filename, content } = call.args as any;
+          console.log(`[Sub-Agent ${targetAgentId} ToolCall] write_workspace_file: ${filename}`);
+          try {
+            await writeFile(filename, content);
+            functionResponses.push({
+              name: "write_workspace_file",
+              response: { status: "success" }
+            });
+          } catch (err: any) {
+            functionResponses.push({
+              name: "write_workspace_file",
+              response: { error: err.message }
+            });
+          }
+        } else if (call.name === "list_workspace_files") {
+          console.log(`[Sub-Agent ${targetAgentId} ToolCall] list_workspace_files`);
+          try {
+            const files = await listFiles(".");
+            functionResponses.push({
+              name: "list_workspace_files",
+              response: { files: files.map(f => f.name) }
+            });
+          } catch (err: any) {
+            functionResponses.push({
+              name: "list_workspace_files",
+              response: { error: err.message }
+            });
+          }
+        } else if (call.name === "read_workspace_file") {
+          const { filename } = call.args as any;
+          console.log(`[Sub-Agent ${targetAgentId} ToolCall] read_workspace_file: ${filename}`);
+          try {
+            const fileContent = await readFile(filename);
+            functionResponses.push({
+              name: "read_workspace_file",
+              response: { content: fileContent }
+            });
+          } catch (err: any) {
+            functionResponses.push({
+              name: "read_workspace_file",
+              response: { error: err.message }
+            });
+          }
+        }
+      }
+
+      systemMemory[memoryKey].push({
+        role: "user",
+        parts: functionResponses.map((resp, idx) => ({
+          functionResponse: {
+            name: resp.name,
+            id: functionCalls[idx].id,
+            response: resp.response
+          }
+        }))
+      });
+      saveMemory(systemMemory);
+    } else {
+      reply = response.text || "No response";
+      break;
+    }
+  }
+
+  saveMemory(systemMemory);
+  return reply;
+}

@@ -1,0 +1,22 @@
+To integrate this agentic scripting system (the multi-agent workflow, J.A.R.V.I.S. orchestration, local sandbox filesystem, and real-time streaming sockets) into another application, you will need to copy the entire backend schema and helper modules.
+Here is the exact index of core backend files that make up this agentic system:
+1. Main System Entry & API Gateway
+server.ts — The principal Express backend entry point. It handles API orchestration for the agent network, initializes HTTP/WebSocket server pipelines, configures endpoints for sandboxed folder/file systems, manages agent session memory clearing, and loads Vite middleware for SPA clients.
+2. Multi-Agent Orchestration & Hub Rules
+server/agentHub.ts — The heart of the multi-agent system. This file manages active dialog contexts, persists message memory for separate sub-agents, handles API-key rotation (failsafe node backup), and matches string patterns (e.g., [DELEGATE TO agentA]) to route tasks autonomously from one agent to the next without human intervention.
+server/agentConfigManager.ts — Orchestrates loading, saving, and checking configurations for agents (model selection, enabled/disabled states, static system instructions) inside the dynamically read server/agent_config.json.
+server/instruction.ts — The system prompt ledger. It holds the core guidelines, markdown profiles, and operational parameters for J.A.R.V.I.S., Pre-Analysis mapping, Agent C (First Pass / Final Audit), Agent A (Pacing), and Agent B (Theatrical Direction).
+3. Real-Time Multimodal Communication Core
+server/agents/jarvis.ts — The WebSocket handler. Connects directly to Google Gemini's Real-time streaming API (ai.live.connect using the @google/genai SDK), structures speech transcription, implements the silent-heartbeat Watchdog timer, processes active user interruptions, and routes tool-calls (Drive, Sheets, Docs, Tasks) dynamically.
+4. Sandboxed Sandpit Filesystem
+filesystem.ts — Implements path resolution, sandbox restrictions (workspace files/), and a Core Integrity shield to prevent writing over or deleting system-sensitive structural files. Also includes parsing bindings for Word documents and PDF files.
+5. Memory Logging & Persistence Services
+server/AgentMemoryService.ts — Tracks current interactive dialogue sequences and stores active session snapshots as markdown inside SESSION.md.
+memory.ts / Jarvismemory.ts — Tracks high-level states (decisions, outputs, session identifiers) inside memory.json and builds the persistent chronological update logger in JARVIS.md.
+Key Node Packages (Dependencies)
+For these modules to compile and run securely in your other app, make sure to add the following to your target package.json:
+@google/genai (Official modern SDK for Gemini API)
+ws (WebSocket protocol support)
+express & multer (HTTP requests and multipart file uploads)
+fs-extra (Extended filesystem promises)
+pdf-parse & word-extractor (Advanced pipeline document readers)

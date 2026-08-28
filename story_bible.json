@@ -1,0 +1,104 @@
+{
+  "version": 19,
+  "updatedAt": 1785006770918,
+  "concept": {
+    "title": "The Whispering Void",
+    "hook": "A deep-space research station is dragged into a silent, lightless dimension where the walls remember the crew's deepest fears.",
+    "summary": "When the 'Aetheris' station experiences a catastrophic engine failure, it slips between the folds of reality into the Void. As the crew struggles to maintain life support, they realize the dimension is not empty; it is a predatory echo-chamber that uses their memories to physically manifest horrors within the corridors.",
+    "genre": "Sci-Fi Horror",
+    "targetEmotion": "Paranoia, isolation, cosmic existential terror",
+    "tone": "Oppressive, clinical, hallucinatory",
+    "targetAudience": "Fans of psychological sci-fi, cosmic horror, and atmospheric suspense"
+  },
+  "storyline": {
+    "macroPlotArc": "Station slip into the Void -> Initial manifestation of anomalies -> Breakdown of structural integrity and sanity -> Descent into the core of the Void -> Final confrontation with the station's reality anchor.",
+    "chapterBreakdown": [
+      {
+        "chapterNumber": 1,
+        "title": "The Silent Horizon",
+        "summary": "Commander Halloway and Dr. Aris attempt to calibrate the comms array, only to discover that the stars outside the viewport have been replaced by a pulsing, static nothingness.",
+        "keyEvents": [
+          "The engine collapse sequence",
+          "First contact with the 'Void-Whisper'—a distortion in audio logs",
+          "Halloway notices the layout of the station has subtly shifted"
+        ]
+      }
+    ],
+    "keyTwists": [
+      "The Void isn't invading the station; the station is being 'digested' by a sentient reality.",
+      "Dr. Aris was aware of the anomaly before the mission began; she is the 'anchor' keeping the station tethered to the Void."
+    ],
+    "climax": "Halloway enters the station's heart to sever the tether, realizing that killing the connection will erase the crew's physical existence from the known universe.",
+    "resolution": "The station returns to space, but the crew finds that their own reflections no longer sync with their movements, hinting that something followed them back."
+  },
+  "storyRules": [
+    "External silence must be represented by high-frequency white noise.",
+    "When characters speak in the Void, add subtle 'double-tracked' reverb to suggest their voices are echoing in other rooms.",
+    "Technical jargon must sound increasingly disjointed as sanity declines."
+  ],
+  "speakers": {
+    "mode": "multi",
+    "narratorVoiceProfile": "Neutral, detached, clinical observer",
+    "narratorVoiceId": "en-US-AndrewNeural",
+    "voiceAssignments": {
+      "Commander Halloway": "en-US-BrianNeural",
+      "Dr. Aris": "en-US-AvaNeural"
+    }
+  },
+  "characterProfiles": [
+    {
+      "id": "char-001",
+      "name": "Commander Halloway",
+      "age": 45,
+      "role": "Station Commander",
+      "vocalProfile": "Gravelly, authoritative, strained under pressure",
+      "voiceId": "en-US-BrianNeural",
+      "background": "Former military pilot, veteran of deep-space exploration.",
+      "speechQuirks": "Short, clipped sentences; frequent pauses to clear his throat.",
+      "motivations": "Protect the crew, restore mechanical order."
+    },
+    {
+      "id": "char-002",
+      "name": "Dr. Aris",
+      "age": 38,
+      "role": "Lead Scientist",
+      "vocalProfile": "Precise, rhythmic, slightly ethereal",
+      "voiceId": "en-US-AvaNeural",
+      "background": "Theoretical physicist specialized in extra-dimensional anomalies.",
+      "speechQuirks": "Frequently uses overly technical jargon even when panicked.",
+      "motivations": "Understand the Void at any cost, even at the expense of safety."
+    }
+  ],
+  "locations": [
+    {
+      "name": "Command Deck",
+      "description": "Cold, flickering blue lights, prone to auditory feedback loops."
+    },
+    {
+      "name": "The Void-Corridor",
+      "description": "A non-Euclidean space that exists outside the station's blueprints."
+    }
+  ],
+  "timeline": "T-Minus Zero to T-Plus 48 Hours in the Void.",
+  "sceneConstraints": {
+    "maxAudioDurationSeconds": 300,
+    "requireEnvironmentalAmbience": true
+  },
+  "audioProductionSettings": {
+    "sampleRate": 44100,
+    "bitrate": "192kbps",
+    "normalizationTarget": -16,
+    "applySpatialAudio": true
+  },
+  "scenes": [
+    {
+      "id": "sc-001",
+      "title": "The Slip",
+      "location": "Command Deck",
+      "dialogue": [
+        "Halloway: Report. Status of the engines?",
+        "Aris: They are gone, Commander. The engines... they haven't just failed. They’ve ceased to exist."
+      ]
+    }
+  ]
+}

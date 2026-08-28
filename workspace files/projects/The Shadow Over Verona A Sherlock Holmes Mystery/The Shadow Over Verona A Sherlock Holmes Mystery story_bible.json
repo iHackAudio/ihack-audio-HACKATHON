@@ -1,0 +1,117 @@
+{
+  "version": 4,
+  "updatedAt": 1785420165286,
+  "phaseLocks": {
+    "phase1": false,
+    "phase2": false,
+    "phase3": false,
+    "phase4": false
+  },
+  "phase1Intake": {
+    "theme": "",
+    "charactersOverview": "Sherlock Holmes, Dr. John Watson, Romeo Montague, Juliet Capulet",
+    "storylineOverview": "When Juliet Capulet vanishes without a trace, Romeo Montague seeks out Sherlock Holmes to unmask a conspiracy.",
+    "format": "Audio Drama",
+    "genreVibe": "Thriller / Mystery",
+    "aiSuggestions": [],
+    "checkedSuggestions": [],
+    "userRevisionNotes": "",
+    "isLocked": false
+  },
+  "concept": {
+    "title": "The Shadow Over Verona: A Sherlock Holmes Mystery",
+    "hook": "When Juliet Capulet vanishes without a trace, a desperate Romeo Montague seeks out London's greatest consulting detective, Sherlock Holmes, to unmask a deadly conspiracy hidden behind family blood feuds.",
+    "summary": "In a dark, atmospheric late-19th-century setting, Lord Capulet discovers his daughter Juliet's secret romance with Romeo Montague. Using his vast network of spies, Capulet orchestrates Juliet's silent abduction to enforce an arranged marriage and solidify his criminal empire. Desperate and out of options, Romeo travels to Baker Street to enlist the legendary Sherlock Holmes and Dr. John Watson.",
+    "logline": "When Juliet Capulet vanishes without a trace, a desperate Romeo Montague seeks out Sherlock Holmes.",
+    "format": "Audio Drama",
+    "genreVibe": "Thriller / Mystery",
+    "genre": "thriller",
+    "tone": "Dark, tense, noir-esque, and intellectually sharp",
+    "targetEmotion": "Suspense, intrigue, and romantic urgency",
+    "targetAudience": "General Drama Broadcast"
+  },
+  "storyline": {
+    "macroPlotArc": "",
+    "chapterBreakdown": [],
+    "keyTwists": [],
+    "climax": "",
+    "resolution": ""
+  },
+  "speakers": {
+    "mode": "multi",
+    "narratorVoiceProfile": "",
+    "narratorVoiceId": "",
+    "voiceAssignments": {}
+  },
+  "characterLimitPerScene": 1200,
+  "characterProfiles": [
+    {
+      "id": "char_sherlock",
+      "name": "Sherlock Holmes",
+      "role": "Protagonist",
+      "age": "38",
+      "vocalProfile": "Crisp, Analytical & Articulate (en-GB)",
+      "voiceId": "Orpheus",
+      "background": "The legendary consulting detective residing at 221B Baker Street, enlisted by Romeo to untangle a covert family abduction.",
+      "speechQuirks": "Rate: 1.1x | Pitch: +0Hz | Style: Rapid deduction delivery, clipped consonants, calculated pauses before disclosures",
+      "motivations": "Solving high-stakes intellectual puzzles and bringing order to chaotic emotional conflicts."
+    },
+    {
+      "id": "char_watson",
+      "name": "Dr. John Watson",
+      "role": "Deuteragonist",
+      "age": "40",
+      "vocalProfile": "Warm, Grounded & Resonant (en-GB)",
+      "voiceId": "Fenrir",
+      "background": "Former military doctor and Sherlock's steadfast biographer, offering emotional balance and tactical support during the investigation.",
+      "speechQuirks": "Rate: 1.0x | Pitch: -1Hz | Style: Steady pacing, pragmatic tone, empathetic and reassuring delivery",
+      "motivations": "Protecting innocent lives and grounding Sherlock's hyper-analytical methods with human compassion."
+    },
+    {
+      "id": "char_romeo",
+      "name": "Romeo Montague",
+      "role": "Deuteragonist",
+      "age": "21",
+      "vocalProfile": "Youthful, Impassioned & Urgent (en-GB)",
+      "voiceId": "Puck",
+      "background": "A desperate young lover who seeks out London's greatest detective after his beloved Juliet is captured by her father's spies.",
+      "speechQuirks": "Rate: 1.15x | Pitch: +2Hz | Style: Breathless delivery, poetic cadence, highly emotional inflections under stress",
+      "motivations": "Locating and rescuing Juliet at any personal cost to secure their shared future."
+    },
+    {
+      "id": "char_juliet",
+      "name": "Juliet Capulet",
+      "role": "Deuteragonist",
+      "age": "19",
+      "vocalProfile": "Dramatic, Expressive & Resolute (en-GB)",
+      "voiceId": "Aoede",
+      "background": "A spirited young noblewoman held captive by her autocratic father after being tracked down by his covert operatives.",
+      "speechQuirks": "Rate: 1.0x | Pitch: +1Hz | Style: Poignant emotional resonance, defiant under strain, lyrical phrasing",
+      "motivations": "Enduring captivity with dignity while sending signals to aid her rescue by Romeo."
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc_baker_st",
+      "name": "221B Baker Street",
+      "description": "Sherlock Holmes' residence and consulting room in Victorian London."
+    }
+  ],
+  "timeline": [],
+  "storyRules": [],
+  "sceneConstraints": {
+    "maxWordsPerScene": 800,
+    "pacing": "moderate",
+    "toneNotes": ""
+  },
+  "audioProductionSettings": {
+    "audioFormat": "mp3",
+    "speechRate": "+0%",
+    "pitch": "+0Hz",
+    "defaultNarratorVoice": "",
+    "backgroundAtmosphere": ""
+  },
+  "scenes": [],
+  "sceneIdeaMatrix": [],
+  "revisionHistory": []
+}

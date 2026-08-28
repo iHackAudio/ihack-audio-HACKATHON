@@ -1,0 +1,25 @@
+{
+  "step": 1,
+  "completed": false,
+  "updatedAt": 1785420197817,
+  "answers": {
+    "title": "",
+    "genre": "",
+    "hook": "",
+    "summary": "",
+    "characterCount": "",
+    "characterNames": "",
+    "speechQuirks": "",
+    "voiceId": "",
+    "macroPlot": "",
+    "climax": "",
+    "resolution": "",
+    "sceneObjectives": "",
+    "location": "",
+    "atmosphere": "",
+    "targetEmotion": "",
+    "tone": "",
+    "audioAtmosphere": "",
+    "additionalNotes": ""
+  }
+}

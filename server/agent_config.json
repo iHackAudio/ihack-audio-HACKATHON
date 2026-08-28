@@ -1,0 +1,19 @@
+{
+  "agentA": {
+    "enabled": true,
+    "systemInstruction": "AGENT_A_SYSTEM_INSTRUCTION",
+    "model": "gemini-3.1-flash-lite"
+  },
+  "agentB": {
+    "enabled": true,
+    "systemInstruction": "AGENT_B_SYSTEM_INSTRUCTION",
+    "model": "gemini-3.1-flash-lite"
+  },
+  "agentC": {
+    "enabled": true,
+    "systemInstruction": "AGENT_C_FIRST_PASS",
+    "model": "gemma-4-31b-it"
+  },
+  "allowAppMutation": true,
+  "groqApiKey": "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"
+}

@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity Schema Validation Helpers
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['email']) &&
+        data.email is string && data.email.size() <= 200 &&
+        (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1000));
+    }
+
+    function isValidStoryBible(data) {
+      return data.keys().hasAll(['title', 'premise', 'userId']) &&
+        data.title is string && data.title.size() <= 200 &&
+        data.premise is string && data.premise.size() <= 2000 &&
+        data.userId is string && data.userId == request.auth.uid &&
+        (!('genre' in data) || (data.genre is string && data.genre.size() <= 100));
+    }
+
+    function isValidAudioTrack(data) {
+      return data.keys().hasAll(['title', 'text', 'voice', 'userId']) &&
+        data.title is string && data.title.size() <= 200 &&
+        data.text is string && data.text.size() <= 5000 &&
+        data.voice is string && data.voice.size() <= 100 &&
+        data.userId is string && data.userId == request.auth.uid &&
+        (!('audioUrl' in data) || (data.audioUrl is string && data.audioUrl.size() <= 1000));
+    }
+
+    function isValidForensicReport(data) {
+      return data.keys().hasAll(['audioFile', 'qualityGrade', 'userId']) &&
+        data.audioFile is string && data.audioFile.size() <= 250 &&
+        data.qualityGrade is string && data.qualityGrade.size() <= 50 &&
+        data.userId is string && data.userId == request.auth.uid &&
+        (!('integratedLoudnessLufs' in data) || data.integratedLoudnessLufs is number);
+    }
+
+    // User Profile Rules
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidUserProfile(incoming());
+      allow delete: if isOwner(userId);
+    }
+
+    // Story Bible Documents
+    match /storyBibles/{storyId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidStoryBible(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && isValidStoryBible(incoming());
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // Audio Track Metadata
+    match /audioTracks/{trackId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidAudioTrack(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && isValidAudioTrack(incoming());
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // Forensic Audio Reports
+    match /forensicReports/{reportId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidForensicReport(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && isValidForensicReport(incoming());
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,11 @@
+export { default as JarvisScriptingApp } from './JarvisScriptingApp';
+export * from './types/jarvisTypes';
+export * from './services/geminiService';
+export * from './services/apiLoggerService';
+export * from './services/backupService';
+export * from './services/keyRegistry';
+export * from './services/audioUtils';
+export { JarvisConsole } from './components/JarvisConsole';
+export { JojoSettingsPanel } from './components/JojoSettingsPanel';
+export { default as SubtextDiscussionStudio } from './components/SubtextDiscussionStudio';
+export { default as SimplifiedPipelineDemo } from './components/SimplifiedPipelineDemo';

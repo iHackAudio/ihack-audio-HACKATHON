@@ -1,0 +1,10 @@
+{
+  "name": "iHack Audio Suite & Jarvis OS",
+  "description": "Modular audio intelligence platform with StoryFlix manuscript ingestion, Jarvis 5-phase scripting pipeline, iHack neural TTS synthesis, and forensic acoustic analysis.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

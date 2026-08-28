@@ -1,0 +1,13 @@
+{
+  "totalSeconds": 108000,
+  "sessions": [
+    {
+      "id": "session_prelogged_baseline",
+      "date": "2026-08-05",
+      "startTime": "09:00:00 AM",
+      "endTime": "07:00:00 PM",
+      "durationSeconds": 108000,
+      "endedReason": "Pre-logged Architecture & Early Build (30 hrs)"
+    }
+  ]
+}

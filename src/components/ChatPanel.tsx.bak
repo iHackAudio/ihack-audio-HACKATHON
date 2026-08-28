@@ -1,0 +1,733 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { ChatMessage } from '../types/index';
+import { Send, Loader2, Volume2, Cpu, Sparkles, Server, Trash2, Copy, Check, Paperclip, Camera, Eye, Zap, CheckCircle2, Wand2, Edit3, X } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { motion, AnimatePresence } from 'motion/react';
+import html2canvas from 'html2canvas';
+import CognitivePipelineVisualizer from './CognitivePipelineVisualizer';
+import AnalysisTerminal from './AnalysisTerminal';
+
+const getAgentColor = (agentId: string) => {
+  switch (agentId?.toLowerCase()) {
+    case 'jarvis': return { bg: 'bg-[#00d2ff]/5', border: 'border-[#00d2ff]/30', header: 'text-[#00d2ff]', icon: <Server className="w-3 h-3" /> };
+    case 'agenta': return { bg: 'bg-[#ff00d2]/5', border: 'border-[#ff00d2]/30', header: 'text-[#ff00d2]', icon: <Cpu className="w-3 h-3" /> };
+    case 'agentb': return { bg: 'bg-[#d2ff00]/5', border: 'border-[#d2ff00]/30', header: 'text-[#d2ff00]', icon: <Sparkles className="w-3 h-3" /> };
+    case 'gemma-middleman': return { bg: 'bg-[#00d2ff]/5', border: 'border-[#00d2ff]/30', header: 'text-[#00d2ff]', icon: <Server className="w-3 h-3" /> };
+    default: return { bg: 'bg-white/5', border: 'border-white/10', header: 'text-white/70', icon: <Server className="w-3 h-3" /> };
+  }
+};
+
+class MessageBus {
+  private static subscribers: Record<string, Function[]> = {};
+
+  static subscribe(event: string, callback: Function) {
+    if (!this.subscribers[event]) this.subscribers[event] = [];
+    this.subscribers[event].push(callback);
+    return () => {
+      this.subscribers[event] = this.subscribers[event].filter(cb => cb !== callback);
+    };
+  }
+
+  static publish(event: string, payload: any) {
+    if (this.subscribers[event]) {
+      this.subscribers[event].forEach(cb => cb(payload));
+    }
+  }
+
+  static getConsolidatedInstructions() {
+    return {
+      jarvis: localStorage.getItem('jarvis_instruction') || undefined,
+      middlemanModel: localStorage.getItem('middleman_model') || 'gemini-3.1-flash-lite',
+    };
+  }
+
+  static async requestResponse(
+    text: string, 
+    actualAgentId: string, 
+    onStart: () => void,
+    onSuccess: (data: any) => void,
+    onFailure: (err: any) => void,
+    onComplete: () => void,
+    historyList: ChatMessage[] = [],
+    autoSpeechEnabled: boolean = true,
+    attachmentsList: any[] = []
+  ) {
+    onStart();
+    try {
+      const config = this.getConsolidatedInstructions();
+      
+      const filteredHistory = historyList
+        .filter(m => m.role === 'user' || (m.role === 'model' && m.agentId === 'jarvis'))
+        .map(h => ({
+          role: h.role,
+          agentId: h.agentId,
+          content: h.content
+        }));
+
+      let sessionId = localStorage.getItem('chat-session-id');
+      if (!sessionId) {
+        sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+        localStorage.setItem('chat-session-id', sessionId);
+      }
+
+      const body = {
+        message: text,
+        history: filteredHistory,
+        attachments: attachmentsList,
+        agentId: actualAgentId,
+        instruction: config.jarvis,
+        middlemanModel: config.middlemanModel,
+        autoSpeechEnabled,
+        sessionId
+      };
+
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        onSuccess(data);
+      } else {
+        onFailure(new Error(data.error || 'Failed to fetch response'));
+      }
+    } catch (e: any) {
+      onFailure(e);
+    } finally {
+      onComplete();
+    }
+  }
+}
+
+export default function ChatPanel({ 
+  activeTab = 'chat',
+  messages, 
+  setMessages,
+  setAgentStatuses
+}: { 
+  activeTab?: string,
+  messages: ChatMessage[],
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  setAgentStatuses?: React.Dispatch<React.SetStateAction<Record<string, 'active' | 'idle' | 'offline' | 'working' | 'thinking' | 'preparing' | 'sending'>>>
+}) {
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pageSnapshot, setPageSnapshot] = useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [isActionProcessing, setIsActionProcessing] = useState(false);
+  const [autoSpeech, setAutoSpeech] = useState(() => {
+    const saved = localStorage.getItem('auto-speech');
+    return saved !== 'false';
+  });
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const getTabLabel = (tab: string) => {
+    switch (tab) {
+      case 'gathering': return { name: 'Phase 1: Intake Specs', badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40' };
+      case 'bible': return { name: 'Phase 2: Story Bible', badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40' };
+      case 'tournament': return { name: 'Phase 3: Scene Tournament', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+      case 'script': return { name: 'Phase 4: Script Optimization', badge: 'bg-teal-500/20 text-teal-300 border-teal-500/40' };
+      case 'chat': return { name: 'AI Command Center', badge: 'bg-sky-500/20 text-sky-300 border-sky-500/40' };
+      case 'settings': return { name: 'System Settings', badge: 'bg-pink-500/20 text-pink-300 border-pink-500/40' };
+      case 'logs': return { name: 'Neural Agent Logs', badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' };
+      default: return { name: 'Active Workspace', badge: 'bg-slate-800 text-slate-300 border-white/10' };
+    }
+  };
+
+  const handleCapturePageVision = async () => {
+    setIsCapturing(true);
+    try {
+      const targetElement = (document.querySelector('main') || document.body) as HTMLElement;
+
+      const sanitizeCss = (str: string) => {
+        if (!str) return str;
+        return str
+          .replace(/(?:oklab|oklch|lab|lch|color-mix|color)\s*\([^;\}]*\)/gi, '#1e293b')
+          .replace(/oklab\([^\)]+\)/gi, '#1e293b')
+          .replace(/oklch\([^\)]+\)/gi, '#1e293b');
+      };
+
+      const canvas = await html2canvas(targetElement, {
+        scale: 0.8,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#080c14',
+        onclone: (clonedDoc) => {
+          // Re-create style nodes to force re-parsing of sanitized CSS
+          const styleElements = clonedDoc.querySelectorAll('style');
+          styleElements.forEach(style => {
+            if (style.textContent) {
+              const cleaned = sanitizeCss(style.textContent);
+              const newStyle = clonedDoc.createElement('style');
+              newStyle.textContent = cleaned;
+              if (style.parentNode) {
+                style.parentNode.replaceChild(newStyle, style);
+              }
+            }
+          });
+
+          // Sanitize inline styles & override computed modern color functions
+          const allEls = clonedDoc.querySelectorAll('*');
+          allEls.forEach(el => {
+            const htmlEl = el as HTMLElement;
+            if (htmlEl.style && htmlEl.style.cssText) {
+              if (/(oklab|oklch|lab|lch|color)/i.test(htmlEl.style.cssText)) {
+                htmlEl.style.cssText = sanitizeCss(htmlEl.style.cssText);
+              }
+            }
+            if (clonedDoc.defaultView) {
+              try {
+                const comp = clonedDoc.defaultView.getComputedStyle(htmlEl);
+                ['color', 'backgroundColor', 'borderColor', 'outlineColor', 'fill', 'stroke'].forEach(prop => {
+                  const val = comp.getPropertyValue(prop);
+                  if (val && /(oklab|oklch|lab|lch|color\()/i.test(val)) {
+                    htmlEl.style.setProperty(prop, '#1e293b', 'important');
+                  }
+                });
+              } catch (_) {}
+            }
+          });
+        }
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      setPageSnapshot(dataUrl);
+    } catch (err) {
+      console.error('Failed to capture page snapshot:', err);
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const handleRunPagePrefill = async (customPrompt?: string) => {
+    setIsActionProcessing(true);
+    try {
+      if (activeTab === 'gathering') {
+        const sampleAnswers = {
+          title: "NEURAL HARMONICS",
+          logline: "In a subterranean mega-city powered by bio-acoustic resonance, an outlaw frequency tuner uncovers a conspiracy to erase human emotions.",
+          targetAudience: "Cyberpunk Audio Drama",
+          speakerA: "Kaelen (Frequency Tuner, cynical, raspy baritone)",
+          speakerB: "Dr. Aris (Lead Bio-Engineer, calm, articulate alto)",
+          speakerC: "Director Vance (Security Enforcer, booming, dominant)",
+          conflict: "The Central Core seeks to mute public frequencies before midnight.",
+          soundDesign: "Low sub-bass hums, reverberant metallic resonance, dripping water, electromagnetic static.",
+          climax: "A live broadcast hijack atop the Resonance Spire amidst heavy rainfall."
+        };
+        await fetch('/api/questionnaire', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answers: sampleAnswers })
+        });
+        await fetch('/api/questionnaire/compile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answers: sampleAnswers })
+        });
+        window.dispatchEvent(new Event('questionnaire_updated'));
+        window.dispatchEvent(new Event('story_bible_updated'));
+        triggerSend("I have pre-filled the Phase 1 Intake specification boxes and compiled the Story Bible!");
+      } else if (activeTab === 'bible') {
+        const res = await fetch('/api/validation/story-bible', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customInstruction: 'Suggest character and scene improvements' })
+        });
+        const data = await res.json();
+        triggerSend(`Story Bible Analysis completed:\n\n${data.critique || data.summary || 'Story Bible is fully synchronized with narrative directives.'}`);
+      } else if (activeTab === 'tournament') {
+        triggerSend("Running Phase 3 Scene Tournament: Dual AI Writers drafting analytical vs cinematic prose...");
+        const res = await fetch('/api/tournament/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        if (res.ok) {
+          window.dispatchEvent(new Event('tournament_updated'));
+        }
+      } else if (activeTab === 'script') {
+        triggerSend("Executing Phase 4 Script Optimization pipeline to format dialogue, acoustic cues, and character voices...");
+        const bibleRes = await fetch('/api/story-bible');
+        const bible = await bibleRes.json();
+        const prose = bible.scenes?.[0]?.proseDraft || "INT. RESONANCE SPIRE - NIGHT\nKaelen adjusts the frequency dial as sirens blare.";
+        const res = await fetch('/api/script/optimize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approvedProse: prose })
+        });
+        if (res.ok) {
+          window.dispatchEvent(new Event('script_updated'));
+        }
+      } else if (customPrompt) {
+        triggerSend(customPrompt);
+      }
+    } catch (e: any) {
+      console.error('Error running prefill action:', e);
+    } finally {
+      setIsActionProcessing(false);
+    }
+  };
+
+  const readLastMessage = async (msgsList = messages) => {
+    const lastModelMsg = [...msgsList].reverse().find(m => m.role === 'model' && m.content);
+    if (lastModelMsg) {
+      if (lastModelMsg.audioUrl) {
+        const url = lastModelMsg.audioUrl;
+        setMessages(prev => prev.map(m => m.id === lastModelMsg.id ? { ...m, audioUrl: '' } : m));
+        setTimeout(() => {
+          setMessages(prev => prev.map(m => m.id === lastModelMsg.id ? { ...m, audioUrl: url } : m));
+        }, 50);
+        return;
+      }
+      try {
+        const response = await fetch('/api/tts/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            script: lastModelMsg.content,
+            voice: 'en-US-AvaNeural',
+            outputFileName: `auto_response_trigger_${Date.now()}.mp3`
+          })
+        });
+        const data = await response.json();
+        if (data.status === 'success' && data.audioUrl) {
+          setMessages(prev => prev.map(m => m.id === lastModelMsg.id ? { ...m, audioUrl: data.audioUrl } : m));
+        }
+      } catch (err) {
+        console.error('Error generating TTS on toggle:', err);
+      }
+    }
+  };
+
+  const handleCopy = (id: string, content: string) => {
+    navigator.clipboard.writeText(content);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
+
+  const parseMention = (text: string) => {
+    const match = text.match(/^@(\w+)\s*(.*)/);
+    if (match) return { target: match[1].toLowerCase(), payload: match[2] };
+    return { target: null, payload: text };
+  };
+
+  const triggerSend = async (text: string, skipUserMsg = false) => {
+    const { target } = parseMention(text);
+    
+    // Prepare attachments
+    const attachmentsList = pageSnapshot ? [{ data: pageSnapshot, mimeType: 'image/png' }] : [];
+    
+    if (!skipUserMsg) {
+      const userMsg: ChatMessage = {
+        id: 'msg-' + Date.now().toString() + Math.random(),
+        role: 'user',
+        content: pageSnapshot ? `${text}\n\n[📸 Attached Active Screen Snapshot]` : text,
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, userMsg]);
+    }
+
+    // Reset page snapshot after sending
+    setPageSnapshot(null);
+
+    const actualAgentId = target || 'jarvis';
+    
+    await MessageBus.requestResponse(
+      text,
+      actualAgentId,
+      () => {
+        setLoading(true);
+        if (setAgentStatuses) {
+          setAgentStatuses(prev => ({ ...prev, [actualAgentId]: 'working' }));
+        }
+        MessageBus.publish('request_start', { agentId: actualAgentId });
+      },
+      (data) => {
+        let agentName = data.agentId || actualAgentId;
+        const modelMsg: ChatMessage = {
+          id: 'msg-' + Date.now().toString() + Math.random(),
+          role: 'model',
+          agentId: agentName,
+          content: data.text || 'No response',
+          audioUrl: data.audioUrl,
+          timestamp: Date.now(),
+          isComplete: true
+        };
+        
+        if (data.logs && Array.isArray(data.logs)) {
+          const mappedLogs: ChatMessage[] = data.logs.map((lg: any) => ({
+             id: 'log-' + Math.random() + Date.now(),
+             role: 'model',
+             agentId: lg.agentId,
+             content: lg.text,
+             timestamp: lg.timestamp || Date.now(),
+             isComplete: true
+          }));
+          setMessages(prev => [...prev, ...mappedLogs, modelMsg]);
+        } else {
+          setMessages(prev => [...prev, modelMsg]);
+        }
+        
+        MessageBus.publish('request_success', { agentId: actualAgentId, response: data.text });
+      },
+      (err) => {
+        const errorMsg: ChatMessage = {
+          id: 'msg-' + Date.now().toString() + Math.random(),
+          role: 'system',
+          content: err.message || 'Failed to process request',
+          timestamp: Date.now(),
+          isComplete: true
+        };
+        setMessages(prev => [...prev, errorMsg]);
+        MessageBus.publish('request_failure', { agentId: actualAgentId, error: err.message });
+      },
+      () => {
+        setLoading(false);
+        if (setAgentStatuses) {
+          setAgentStatuses(prev => ({ ...prev, [actualAgentId]: 'idle' }));
+        }
+        MessageBus.publish('request_complete', { agentId: actualAgentId });
+      },
+      messages,
+      autoSpeech,
+      attachmentsList
+    );
+  };
+
+  const handleSend = () => {
+    if (!input.trim() && !pageSnapshot) return;
+    const text = input.trim() || "Please analyze the attached page snapshot and assist me with the current task.";
+    setInput('');
+    triggerSend(text);
+  };
+
+  const tabMeta = getTabLabel(activeTab);
+
+  return (
+    <div className="flex h-full bg-transparent text-white relative overflow-hidden flex-col">
+      {/* Top Context Radar Banner */}
+      <div className="bg-[#090d16] border-b border-white/10 px-3 py-1.5 flex items-center justify-between shrink-0 text-xs">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Eye className="w-3.5 h-3.5 text-sky-400 shrink-0 animate-pulse" />
+          <span className="text-[10px] text-slate-400 font-medium">Radar:</span>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border truncate ${tabMeta.badge}`}>
+            {tabMeta.name}
+          </span>
+        </div>
+
+        <button
+          onClick={handleCapturePageVision}
+          disabled={isCapturing}
+          className="h-6 px-2 rounded bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-[10px] font-bold text-sky-300 flex items-center gap-1 transition-all cursor-pointer shrink-0"
+          title="Capture active workspace visual screenshot for AI vision analysis"
+        >
+          {isCapturing ? <Loader2 className="w-3 h-3 animate-spin text-sky-400" /> : <Camera className="w-3 h-3 text-sky-400" />}
+          <span>{isCapturing ? 'Snapping...' : 'Capture Page Vision'}</span>
+        </button>
+      </div>
+
+      <div className="flex-1 flex flex-col h-full relative overflow-hidden">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+          <AnimatePresence initial={false}>
+          {messages.filter(msg => msg.agentId !== 'Edge-TTS-Engine').map(msg => {
+            const isUser = msg.role === 'user';
+            const timestampStr = new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
+            let speakerTag = '[JARVIS // COMPUTE_CORE]';
+            let tagColor = 'text-slate-light drop-shadow-[0_0_8px_rgba(241,245,249,0.4)]';
+            let rowBg = 'bg-bg-dark-slate/80 border-tab-blue/30 hover:border-tab-blue/60';
+            let borderStyle = 'border-l-2 border-l-[#f1f5f9]';
+            
+            if (isUser) {
+              speakerTag = '[USER // INTENT_CAPTURE]';
+              tagColor = 'text-slate-light drop-shadow-[0_0_8px_rgba(241,245,249,0.4)]';
+              rowBg = 'bg-bg-slate border-tab-blue/40 hover:border-tab-blue/80';
+              borderStyle = 'border-l-2 border-l-[#3b82f6]';
+            } else {
+              const agentIdLower = msg.agentId?.toLowerCase() || '';
+              if (agentIdLower === 'agenta') {
+                speakerTag = '[AGENT_A // COGNITIVE_MATH]';
+                tagColor = 'text-amber-200 drop-shadow-[0_0_8px_rgba(251,191,36,0.4)]';
+                rowBg = 'bg-bg-dark-slate/60 border-tab-blue/30 hover:border-tab-blue/60';
+                borderStyle = 'border-l-2 border-l-amber-300';
+              } else if (agentIdLower === 'agentb') {
+                speakerTag = '[AGENT_B // CREATION_MATRIX]';
+                tagColor = 'text-amber-300 drop-shadow-[0_0_8px_rgba(250,204,21,0.4)]';
+                rowBg = 'bg-bg-dark-slate/60 border-tab-blue/30 hover:border-tab-blue/60';
+                borderStyle = 'border-l-2 border-l-amber-400';
+              } else if (agentIdLower === 'gemma-middleman' || agentIdLower === 'middleman') {
+                speakerTag = '[MIDDLEMAN // SYNTHESIS_LOG]';
+                tagColor = 'text-emerald-300 drop-shadow-[0_0_8px_rgba(45,212,191,0.4)]';
+                rowBg = 'bg-bg-dark-slate/60 border-tab-blue/30 hover:border-tab-blue/60';
+                borderStyle = 'border-l-2 border-l-emerald-400';
+              } else if (msg.role === 'system') {
+                speakerTag = '[SYSTEM // PIPELINE_EVENT]';
+                tagColor = 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.4)]';
+                rowBg = 'bg-amber-950/20 border-amber-800/40 hover:border-amber-500/60';
+                borderStyle = 'border-l-2 border-l-amber-500';
+              }
+            }
+
+            return (
+              <motion.div 
+                initial={{ opacity: 0, x: isUser ? 15 : -15, scale: 0.99 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+                key={msg.id} 
+                className="w-full flex"
+              >
+                <div className={`w-full relative p-4 rounded-xl border ${rowBg} backdrop-blur-md overflow-hidden transition-all duration-300 ${borderStyle} group`}>
+                  <div className="flex items-center justify-between pointer-events-none mb-2 border-b border-white/10 pb-1.5 text-[10px]">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-slate-400">{timestampStr}</span>
+                      <span className={`font-mono font-bold uppercase ${tagColor}`}>{speakerTag}</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 pointer-events-auto">
+                      <button 
+                        onClick={() => handleCopy(msg.id, msg.content)}
+                        className="opacity-60 hover:opacity-100 text-slate-300 transition-opacity flex items-center gap-1 cursor-pointer"
+                        title="Copy transcript row"
+                      >
+                        {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="text-xs prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-bg-dark-slate select-text font-sans text-slate-200">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+
+                  {msg.audioUrl && (
+                    <div className="mt-2">
+                      <audio src={msg.audioUrl} autoPlay controls className="h-7 w-full outline-none opacity-80 hover:opacity-100 transition-opacity" />
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+          </AnimatePresence>
+        
+        {loading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-2 p-2 w-full justify-start">
+            <CognitivePipelineVisualizer 
+              messageText={messages[messages.length - 1]?.content || ''} 
+              targetAgentId={messages[messages.length - 1]?.agentId || 'jarvis'} 
+            />
+            <div className="max-w-[90%] p-3 rounded-xl bg-bg-slate border border-sky-500/40 flex items-center justify-center gap-2 animate-pulse text-xs font-bold text-sky-200">
+              <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+              <span>J.A.R.V.I.S. processing request & active page context...</span>
+            </div>
+          </motion.div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Quick Action Chips Bar */}
+      <div className="bg-[#090d16] border-t border-white/10 px-3 py-2 flex items-center gap-1.5 overflow-x-auto shrink-0 custom-scrollbar">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
+          <Zap className="w-3 h-3 text-amber-400" /> Actions:
+        </span>
+        {activeTab === 'gathering' && (
+          <>
+            <button
+              onClick={() => handleRunPagePrefill()}
+              disabled={isActionProcessing}
+              className="h-6 px-2 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
+            >
+              {isActionProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+              <span>Pre-fill Intake Form</span>
+            </button>
+            <button
+              onClick={() => triggerSend("Rewrite the current Phase 1 premise and hook to make it high-stakes and dramatic.")}
+              className="h-6 px-2 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
+            >
+              <Edit3 className="w-3 h-3 text-amber-400" />
+              <span>Rewrite Logline</span>
+            </button>
+          </>
+        )}
+
+        {activeTab === 'bible' && (
+          <>
+            <button
+              onClick={() => handleRunPagePrefill()}
+              disabled={isActionProcessing}
+              className="h-6 px-2 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
+            >
+              {isActionProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+              <span>Critique Story Bible</span>
+            </button>
+            <button
+              onClick={() => triggerSend("Generate 3 rich character profiles for the Story Bible cast list.")}
+              className="h-6 px-2 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
+            >
+              <Wand2 className="w-3 h-3 text-purple-400" />
+              <span>Generate Cast Bios</span>
+            </button>
+          </>
+        )}
+
+        {activeTab === 'tournament' && (
+          <>
+            <button
+              onClick={() => handleRunPagePrefill()}
+              disabled={isActionProcessing}
+              className="h-6 px-2 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
+            >
+              {isActionProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+              <span>Run Scene Tournament</span>
+            </button>
+            <button
+              onClick={() => triggerSend("Critique the draft prose from Writer A vs Writer B and recommend the best merge.")}
+              className="h-6 px-2 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
+            >
+              <Edit3 className="w-3 h-3 text-emerald-400" />
+              <span>Critique Writers</span>
+            </button>
+          </>
+        )}
+
+        {activeTab === 'script' && (
+          <>
+            <button
+              onClick={() => handleRunPagePrefill()}
+              disabled={isActionProcessing}
+              className="h-6 px-2 rounded bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
+            >
+              {isActionProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+              <span>Optimize Script</span>
+            </button>
+            <button
+              onClick={() => triggerSend("Suggest edits to improve the dialogue flow and emotional pacing of the active script scene.")}
+              className="h-6 px-2 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0"
+            >
+              <Edit3 className="w-3 h-3 text-teal-400" />
+              <span>Polish Active Dialogue</span>
+            </button>
+          </>
+        )}
+      </div>
+
+      <div className="p-3 border-t border-white/10 bg-[#0d1322]">
+        {/* Attached Page Snapshot Thumbnail */}
+        {pageSnapshot && (
+          <div className="mb-2 relative inline-block group">
+            <img src={pageSnapshot} alt="Page Vision Snapshot" className="h-16 rounded border border-sky-400/60 shadow-md object-cover" />
+            <button
+              onClick={() => setPageSnapshot(null)}
+              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center text-[10px] font-bold cursor-pointer hover:bg-red-500"
+              title="Remove snapshot"
+            >
+              <X className="w-3 h-3" />
+            </button>
+            <span className="absolute bottom-1 left-1 bg-black/80 text-[8px] text-sky-300 font-bold px-1 rounded">
+              📸 Screen Vision
+            </span>
+          </div>
+        )}
+
+        <div className="mb-2 flex justify-between items-center text-[10px]">
+          <button
+            onClick={() => {
+              const newVal = !autoSpeech;
+              setAutoSpeech(newVal);
+              localStorage.setItem('auto-speech', String(newVal));
+              if (newVal) {
+                readLastMessage();
+              }
+            }}
+            className={`px-2.5 py-0.5 flex items-center gap-1 border rounded text-[10px] font-bold transition-colors cursor-pointer ${
+              autoSpeech 
+                ? 'bg-sky-500/20 text-sky-300 border-sky-400/50' 
+                : 'bg-slate-800 text-slate-400 border-white/10'
+            }`}
+          >
+            <Volume2 className="w-3 h-3" />
+            {autoSpeech ? 'TTS Voice: ON' : 'TTS Voice: OFF'}
+          </button>
+          
+          {messages.length > 0 && (
+            <button
+              onClick={async () => {
+                setMessages([]);
+                try {
+                  await fetch('/api/clear-history', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: localStorage.getItem('chat-session-id') || null })
+                  });
+                } catch (e) {
+                  console.error("Failed to clear backend sub-agent memory:", e);
+                }
+              }}
+              className="px-2 py-0.5 flex items-center gap-1 text-red-300 hover:text-red-200 bg-red-950/40 hover:bg-red-900/60 border border-red-800/40 rounded text-[10px] font-bold transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3 h-3" />
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div className="relative flex items-center bg-[#080c14] rounded-xl border border-white/10 focus-within:border-sky-400 p-2 gap-2">
+          <input 
+            type="file" 
+            id="file-upload" 
+            className="hidden" 
+            accept=".txt,.json,.md,.js,.ts,.html,.css,.csv"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = (re) => {
+                const text = re.target?.result as string;
+                if (text) {
+                  setInput(prev => prev + (prev.trim() ? '\n\n' : '') + `[File: ${file.name}]\n` + text);
+                }
+              };
+              reader.readAsText(file);
+              e.target.value = '';
+            }}
+          />
+          <button 
+            onClick={() => document.getElementById('file-upload')?.click()}
+            className="w-8 h-8 shrink-0 flex items-center justify-center bg-slate-800 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer"
+            title="Attach Text File"
+          >
+            <Paperclip className="w-3.5 h-3.5" />
+          </button>
+          
+          <textarea 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder={pageSnapshot ? "Ask AI about this active screen view..." : "Type message, ask to pre-fill or rewrite..."}
+            className="flex-1 bg-transparent border-none focus:ring-0 resize-none min-h-[38px] max-h-[160px] text-xs px-1 text-slate-100 placeholder:text-slate-500 outline-none py-2"
+            rows={1}
+          />
+          
+          <button 
+            onClick={handleSend}
+            disabled={(!input.trim() && !pageSnapshot) || loading}
+            className="w-8 h-8 shrink-0 flex items-center justify-center bg-sky-500 text-slate-950 rounded-lg hover:bg-sky-400 disabled:opacity-40 transition-all font-bold cursor-pointer"
+          >
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+      </div>
+    </div>
+  );
+}
+

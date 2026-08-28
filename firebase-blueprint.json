@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "StoryBible": {
+      "title": "Story Bible",
+      "description": "Story Studio narrative blueprints and character profiles",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "genre": { "type": "string", "maxLength": 100 },
+        "premise": { "type": "string", "maxLength": 2000 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "premise", "userId"]
+    },
+    "AudioTrack": {
+      "title": "Audio Track",
+      "description": "Synthesized neural TTS audio tracks",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "text": { "type": "string", "maxLength": 5000 },
+        "voice": { "type": "string", "maxLength": 100 },
+        "audioUrl": { "type": "string", "maxLength": 1000 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "text", "voice", "userId"]
+    },
+    "ForensicReport": {
+      "title": "Forensic Report",
+      "description": "Audio analysis and QA reports",
+      "type": "object",
+      "properties": {
+        "audioFile": { "type": "string", "maxLength": 250 },
+        "integratedLoudnessLufs": { "type": "number" },
+        "qualityGrade": { "type": "string", "maxLength": 50 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["audioFile", "qualityGrade", "userId"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User account information",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 200 },
+        "photoURL": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile collection"
+    },
+    "/storyBibles/{storyId}": {
+      "schema": { "$ref": "#/entities/StoryBible" },
+      "description": "Story Bible documents"
+    },
+    "/audioTracks/{trackId}": {
+      "schema": { "$ref": "#/entities/AudioTrack" },
+      "description": "Synthesized TTS audio track metadata"
+    },
+    "/forensicReports/{reportId}": {
+      "schema": { "$ref": "#/entities/ForensicReport" },
+      "description": "Forensic audio audit reports"
+    }
+  }
+}

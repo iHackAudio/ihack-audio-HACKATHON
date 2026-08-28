@@ -1,0 +1,35 @@
+{
+  "activeProtocol": "autogen",
+  "protocols": {
+    "protocol1": {
+      "name": "Oscar Storytelling",
+      "description": "Oscar-winning swarm for cinematic audiobook script optimization",
+      "version": "2.0"
+    },
+    "protocol5": {
+      "name": "OSCAR Pipeline",
+      "description": "PROTOCOL 5 – THE OSCAR PIPELINE (Refined Funnel + Creative Suggestions)",
+      "version": "5.0"
+    },
+    "cinematic_3agent": {
+      "name": "3-Agent Cinematic Scripting",
+      "description": "Oscar-level 3-Agent Pipeline (B: Dialogue Master -> A: Narrative Storyteller -> C: Auditor -> JARVIS) driven by Story Bible & Skills",
+      "version": "1.0"
+    },
+    "cinematic_simple": {
+      "name": "Simple Skill-Injected Protocol",
+      "description": "Direct injection of SKILL MD blocks (${skillBlocks.agentX}) for zero-code dynamic skill swapping",
+      "version": "1.0"
+    },
+    "autogen": {
+      "name": "AutoGen v0.4 Async",
+      "description": "Reimagined AutoGen v0.4 asynchronous, event-driven actor model agent pipeline",
+      "version": "0.4"
+    },
+    "adk_story": {
+      "name": "Google ADK Story Pipeline",
+      "description": "Google ADK 4-Skill Multi-Agent Cinematic Audiobook Pipeline",
+      "version": "1.0"
+    }
+  }
+}
